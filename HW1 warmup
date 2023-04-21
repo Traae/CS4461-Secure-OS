@@ -1,0 +1,766 @@
+diff --git a/initial-kv/Makefile b/initial-kv/Makefile
+new file mode 100644
+index 0000000..abbc7cf
+--- /dev/null
++++ b/initial-kv/Makefile
+@@ -0,0 +1,11 @@
++CFLAGS=-O2 -Wall -Werror
++
++kv: kv.c
++	$(CC) -o kv $< $(CFLAGS)
++
++test: kv
++	bash test-kv.sh
++
++clean:
++	rm -f keyValues.db kv
++	rm -fr tests-out
+diff --git a/initial-kv/keyValues.db b/initial-kv/keyValues.db
+new file mode 100644
+index 0000000..e558409
+--- /dev/null
++++ b/initial-kv/keyValues.db
+@@ -0,0 +1,4 @@
++0,Hello
++1,World
++2,Test
++3,balls
+diff --git a/initial-kv/kv b/initial-kv/kv
+new file mode 100755
+index 0000000..c11b155
+Binary files /dev/null and b/initial-kv/kv differ
+diff --git a/initial-kv/kv.c b/initial-kv/kv.c
+new file mode 100644
+index 0000000..acd4951
+--- /dev/null
++++ b/initial-kv/kv.c
+@@ -0,0 +1,354 @@
++//Traae Bloxham
++//Jason Wright
++//Cs 4461
++// 1/19/23
++
++// I over did it with the struct, but I wanted to stretch my c-legs.
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <ctype.h>
++#include <math.h>
++
++const char* databaseFile = "./keyValues.db";
++
++struct commandKVPair {
++	char command;
++	int key;
++	char* value;
++};
++
++
++// Prototypes
++void help();
++void put(int key, char* value);
++void get(int key);
++void delete(int key);
++void clear();
++void all();
++struct commandKVPair* parseArgument(char* arg);
++int checkDatabase();
++
++
++int main(int argc, char* args[]) {
++	int retCode = 0;
++	//printf("%s:\n", args[0]);
++
++	// check for args
++	if (argc < 2){
++		printf("For help use command h\n example: \"./kv h\"\n");
++	}
++	else{
++		// Beginning index of arguments, count up to argc
++		int index = 1;
++
++		while (index < argc){
++			 struct commandKVPair *ckvp = parseArgument(args[index]);
++
++			 switch(ckvp->command) {
++				// help
++				case 'h' :
++         				help();
++         				break;
++      				// put
++				case 'p' :
++         				put(ckvp->key, ckvp->value);
++         				break;
++      				// get
++				case 'g' :
++         				get(ckvp->key);
++         				break;
++      				// delete
++				case 'd' :
++         				delete(ckvp->key);
++         				break;
++      				// clear
++				case 'c' :
++         				clear();
++         				break;
++      				// all
++				case 'a' :
++         				all();
++         				break;
++      				default :
++         				printf("Bad Command:%c\n",ckvp->command);
++                        printf("From Argument: %s\n", args[index]);
++                        printf("Parsed as: \n%c, \n%d, \n%s\n", ckvp->command, ckvp->key, ckvp->value);
++			}
++			free(ckvp);
++			index++;
++		}
++	}
++	return retCode;
++}
++
++/*
++Parsing Function
++
++Takes the arg and splits it on the comma delimiter, returning the contents in the struct
++*/
++struct commandKVPair* parseArgument(char* arg){
++	//printf("Debug/progress print PARSING: %s,\n", arg);
++
++	// Parsing
++
++	// Variables
++	char c = '!';
++    int k = '0';
++    char* v = "NULL";
++
++    // count commas
++	int count = 1;
++	int index = 0;
++	while (arg[index] != '\0'){
++        if (arg[index] == ','){count = count + 1;}
++        if (arg[index] == '\n') { arg[index+1] = '\0';}
++        index=index+1;
++	}
++
++    // set the command if good
++	if(isalpha(arg[0])){
++        c = arg[0];
++	}
++
++
++	 // Conditionally grab the key and value
++
++    if (count > 1){
++        char **breakdown = malloc(count * sizeof(char*));
++
++        breakdown[0] = strtok(arg, ",");
++        for (int i = 1; i < count; i++) {
++            breakdown[i] = strtok(NULL, ",");
++        }
++        k = atoi(breakdown[1]);
++
++        if (count > 2){
++            v = breakdown[2];
++        }
++    }
++
++
++	struct commandKVPair *parsed;
++	parsed = malloc(sizeof(struct commandKVPair));
++    parsed->command = c;
++    parsed->key = k;
++    parsed->value = v;
++
++    //printf("Debug/progress print PARSING2: %c, %d, %s,\n", parsed->command, parsed->key, parsed->value);
++	return parsed;
++}
++
++/*
++Command: Help
++
++prints the list of commands and there codes. + some basic info.
++*/
++void help(){
++	printf("This program stores and manages Key-Value pairs.\n");
++	printf("All Keys are integers.\n");
++	printf("All Values are Strings.\n");
++	printf("You may use the following commands.\n\n");
++	printf("Operation - Command - Example        - Description\n");
++	printf("_________   _______   ______________   ___________\n");
++	printf("Help      - h       - ./kv h         - Shows you this page.\n");
++	printf("Put       - p       - ./kv p,1,Hello - Stores Value Hello with Key 1\n");
++	printf("Get       - g       - ./kv g,1       - Return the Value stored with Key 1\n");
++	printf("Delete    - d       - ./kv d,1       - Delete the value stored with Key 1\n");
++	printf("Clear     - c       - ./kv c         - Clears all Key-Value pairs from the Database.\n");
++	printf("All       - a       - ./kv a         - Displays all stored Key-Value pairs\n\n");
++    printf("All command input defaults to !,0,NULL\n");
++}
++
++/*
++Command: Put
++
++Opens the database file and writes the key-value pair.
++*/
++void put(int key, char* value){
++	FILE *writeFile = fopen(databaseFile, "a");
++
++	if (writeFile == NULL){
++        printf("Database Error.\n");
++        exit(1);
++	}
++
++
++	char str[10];
++    sprintf(str, "%d", key);
++	char* toWrite = strcat(str, ",");
++	toWrite = strcat(toWrite, value);
++    toWrite = strcat(toWrite, "\n");
++
++	fputs(toWrite, writeFile);
++	fclose(writeFile);
++}
++
++/*
++Command: Get
++
++Opens the database file and reads the key's line and prints the value.
++*/
++void get(int key){
++	FILE* fp1;
++
++    int line = 0;
++    // Open and check
++    fp1 = fopen(databaseFile, "r");
++
++    if (fp1 == NULL) {
++        printf("\nUnable to open file\n");
++        exit(1);
++    }
++
++    // Find line that starts with key
++    char *lineRead = NULL;
++    size_t len = 0;
++    ssize_t bitsRead;
++    int keyFound = 0;
++    char *copyOfLine= malloc(sizeof(char*));
++
++    while ((bitsRead = getline(&lineRead, &len, fp1)) != -1) {
++            int keyOfLine = -1;
++
++
++            strcpy(copyOfLine, lineRead);
++            strtok(copyOfLine, ",");
++            keyOfLine = atoi(copyOfLine);
++
++            if (keyOfLine == key){
++                keyFound=1;
++                printf("%s", lineRead);
++            }
++            line++;
++    }
++    free(copyOfLine);
++    fclose(fp1);
++    // Continue based on key foundness
++    if (keyFound == 0){
++        printf("Key not found.");
++    }
++}
++
++/*
++Command: Delete
++
++Opens the database file and deletes the key's line.
++
++I tried doing this a couple different ways, but I ran into so issues.
++So, I copied this inelegant solution from here: https://www.includehelp.com/c-programs/remove-a-specific-line-from-the-text-file.aspx
++Copy and filter into a temp file is a solution I could have done myself,
++its just so bulky. I was sure there was a command for it. Now I'm tired.
++
++Obviously I made needed changes and commented the algorithm for my own learning.
++*/
++void delete(int key){
++
++    FILE* fp1;
++    FILE* fp2;
++
++    char ch;
++    int line = 0;
++    int temp = 1;
++    // Open and check
++    fp1 = fopen(databaseFile, "r");
++
++    if (fp1 == NULL) {
++        printf("\nUnable to open file\n");
++        exit(1);
++    }
++
++    // Find line that starts with key
++    char *lineRead = NULL;
++    size_t len = 0;
++    ssize_t bitsRead;
++    int keyFound = 0;
++
++    while ((bitsRead = getline(&lineRead, &len, fp1)) != -1) {
++
++
++            int keyOfLine = -1;
++
++            char *keyStringOfLine = malloc(sizeof(char*));
++            keyStringOfLine = strtok(lineRead, ",");
++            keyOfLine = atoi(keyStringOfLine);
++
++
++            if (keyOfLine == key){
++                keyFound=1;
++                free(keyStringOfLine);
++                break;
++            }
++            line++;
++            free(keyStringOfLine);
++    }
++    rewind(fp1);
++
++    // Continue based on key foundness
++    if (keyFound == 0){
++        printf("Key not found.");
++        fclose(fp1);
++        exit(0);
++    }
++
++    // Copy to temp loop
++    fp2 = fopen("./temp.txt", "w");
++
++    while (!feof(fp1)) {
++        ch = getc(fp1);
++
++        if (ch == '\n'){ temp++; }
++        if (temp != line) {putc(ch, fp2);}
++    }
++    fclose(fp1);
++    fclose(fp2);
++
++    remove(databaseFile);
++    rename("./temp.txt", databaseFile);
++
++}
++
++
++/*
++Command: Clear
++
++Clears the database file, doesn't delete the file.
++*/
++void clear(){
++
++    FILE* fp2;
++    fp2 = fopen("./temp.txt", "w");
++    fclose(fp2);
++
++    remove(databaseFile);
++    rename("./temp.txt", databaseFile);
++}
++
++/*
++Command: ALL
++
++Opens the database prints as the contents.
++*/
++void all(){
++
++
++	FILE *toRead= fopen(databaseFile, "r+");
++
++	if (toRead == NULL){
++        printf("Database Error.\n");
++        exit(1);
++	}
++
++    char *line = NULL;
++    size_t len = 0;
++    ssize_t read;
++
++    while ((read = getline(&line, &len, toRead)) != -1) {
++        printf("%s", line);
++    }
++    printf("\n");
++
++    free(line);
++	fclose(toRead);
++}
+diff --git a/initial-kv/kv.o b/initial-kv/kv.o
+new file mode 100644
+index 0000000..2a06609
+Binary files /dev/null and b/initial-kv/kv.o differ
+diff --git a/initial-kv/my-submission b/initial-kv/my-submission
+new file mode 100644
+index 0000000..3c8ace6
+--- /dev/null
++++ b/initial-kv/my-submission
+@@ -0,0 +1,344 @@
++diff --git a/initial-kv/Makefile b/initial-kv/Makefile
++new file mode 100644
++index 0000000..abbc7cf
++--- /dev/null
+++++ b/initial-kv/Makefile
++@@ -0,0 +1,11 @@
+++CFLAGS=-O2 -Wall -Werror
+++
+++kv: kv.c
+++	$(CC) -o kv $< $(CFLAGS)
+++
+++test: kv
+++	bash test-kv.sh
+++
+++clean:
+++	rm -f keyValues.db kv
+++	rm -fr tests-out
++diff --git a/initial-kv/keyValues.db b/initial-kv/keyValues.db
++new file mode 100644
++index 0000000..e558409
++--- /dev/null
+++++ b/initial-kv/keyValues.db
++@@ -0,0 +1,4 @@
+++0,Hello
+++1,World
+++2,Test
+++3,balls
++diff --git a/initial-kv/kv b/initial-kv/kv
++new file mode 100755
++index 0000000..c11b155
++Binary files /dev/null and b/initial-kv/kv differ
++diff --git a/initial-kv/kv.c b/initial-kv/kv.c
++new file mode 100644
++index 0000000..acd4951
++--- /dev/null
+++++ b/initial-kv/kv.c
++@@ -0,0 +1,354 @@
+++//Traae Bloxham
+++//Jason Wright
+++//Cs 4461
+++// 1/19/23
+++
+++// I over did it with the struct, but I wanted to stretch my c-legs.
+++
+++#include <stdio.h>
+++#include <stdlib.h>
+++#include <string.h>
+++#include <ctype.h>
+++#include <math.h>
+++
+++const char* databaseFile = "./keyValues.db";
+++
+++struct commandKVPair {
+++	char command;
+++	int key;
+++	char* value;
+++};
+++
+++
+++// Prototypes
+++void help();
+++void put(int key, char* value);
+++void get(int key);
+++void delete(int key);
+++void clear();
+++void all();
+++struct commandKVPair* parseArgument(char* arg);
+++int checkDatabase();
+++
+++
+++int main(int argc, char* args[]) {
+++	int retCode = 0;
+++	//printf("%s:\n", args[0]);
+++
+++	// check for args
+++	if (argc < 2){
+++		printf("For help use command h\n example: \"./kv h\"\n");
+++	}
+++	else{
+++		// Beginning index of arguments, count up to argc
+++		int index = 1;
+++
+++		while (index < argc){
+++			 struct commandKVPair *ckvp = parseArgument(args[index]);
+++
+++			 switch(ckvp->command) {
+++				// help
+++				case 'h' :
+++         				help();
+++         				break;
+++      				// put
+++				case 'p' :
+++         				put(ckvp->key, ckvp->value);
+++         				break;
+++      				// get
+++				case 'g' :
+++         				get(ckvp->key);
+++         				break;
+++      				// delete
+++				case 'd' :
+++         				delete(ckvp->key);
+++         				break;
+++      				// clear
+++				case 'c' :
+++         				clear();
+++         				break;
+++      				// all
+++				case 'a' :
+++         				all();
+++         				break;
+++      				default :
+++         				printf("Bad Command:%c\n",ckvp->command);
+++                        printf("From Argument: %s\n", args[index]);
+++                        printf("Parsed as: \n%c, \n%d, \n%s\n", ckvp->command, ckvp->key, ckvp->value);
+++			}
+++			free(ckvp);
+++			index++;
+++		}
+++	}
+++	return retCode;
+++}
+++
+++/*
+++Parsing Function
+++
+++Takes the arg and splits it on the comma delimiter, returning the contents in the struct
+++*/
+++struct commandKVPair* parseArgument(char* arg){
+++	//printf("Debug/progress print PARSING: %s,\n", arg);
+++
+++	// Parsing
+++
+++	// Variables
+++	char c = '!';
+++    int k = '0';
+++    char* v = "NULL";
+++
+++    // count commas
+++	int count = 1;
+++	int index = 0;
+++	while (arg[index] != '\0'){
+++        if (arg[index] == ','){count = count + 1;}
+++        if (arg[index] == '\n') { arg[index+1] = '\0';}
+++        index=index+1;
+++	}
+++
+++    // set the command if good
+++	if(isalpha(arg[0])){
+++        c = arg[0];
+++	}
+++
+++
+++	 // Conditionally grab the key and value
+++
+++    if (count > 1){
+++        char **breakdown = malloc(count * sizeof(char*));
+++
+++        breakdown[0] = strtok(arg, ",");
+++        for (int i = 1; i < count; i++) {
+++            breakdown[i] = strtok(NULL, ",");
+++        }
+++        k = atoi(breakdown[1]);
+++
+++        if (count > 2){
+++            v = breakdown[2];
+++        }
+++    }
+++
+++
+++	struct commandKVPair *parsed;
+++	parsed = malloc(sizeof(struct commandKVPair));
+++    parsed->command = c;
+++    parsed->key = k;
+++    parsed->value = v;
+++
+++    //printf("Debug/progress print PARSING2: %c, %d, %s,\n", parsed->command, parsed->key, parsed->value);
+++	return parsed;
+++}
+++
+++/*
+++Command: Help
+++
+++prints the list of commands and there codes. + some basic info.
+++*/
+++void help(){
+++	printf("This program stores and manages Key-Value pairs.\n");
+++	printf("All Keys are integers.\n");
+++	printf("All Values are Strings.\n");
+++	printf("You may use the following commands.\n\n");
+++	printf("Operation - Command - Example        - Description\n");
+++	printf("_________   _______   ______________   ___________\n");
+++	printf("Help      - h       - ./kv h         - Shows you this page.\n");
+++	printf("Put       - p       - ./kv p,1,Hello - Stores Value Hello with Key 1\n");
+++	printf("Get       - g       - ./kv g,1       - Return the Value stored with Key 1\n");
+++	printf("Delete    - d       - ./kv d,1       - Delete the value stored with Key 1\n");
+++	printf("Clear     - c       - ./kv c         - Clears all Key-Value pairs from the Database.\n");
+++	printf("All       - a       - ./kv a         - Displays all stored Key-Value pairs\n\n");
+++    printf("All command input defaults to !,0,NULL\n");
+++}
+++
+++/*
+++Command: Put
+++
+++Opens the database file and writes the key-value pair.
+++*/
+++void put(int key, char* value){
+++	FILE *writeFile = fopen(databaseFile, "a");
+++
+++	if (writeFile == NULL){
+++        printf("Database Error.\n");
+++        exit(1);
+++	}
+++
+++
+++	char str[10];
+++    sprintf(str, "%d", key);
+++	char* toWrite = strcat(str, ",");
+++	toWrite = strcat(toWrite, value);
+++    toWrite = strcat(toWrite, "\n");
+++
+++	fputs(toWrite, writeFile);
+++	fclose(writeFile);
+++}
+++
+++/*
+++Command: Get
+++
+++Opens the database file and reads the key's line and prints the value.
+++*/
+++void get(int key){
+++	FILE* fp1;
+++
+++    int line = 0;
+++    // Open and check
+++    fp1 = fopen(databaseFile, "r");
+++
+++    if (fp1 == NULL) {
+++        printf("\nUnable to open file\n");
+++        exit(1);
+++    }
+++
+++    // Find line that starts with key
+++    char *lineRead = NULL;
+++    size_t len = 0;
+++    ssize_t bitsRead;
+++    int keyFound = 0;
+++    char *copyOfLine= malloc(sizeof(char*));
+++
+++    while ((bitsRead = getline(&lineRead, &len, fp1)) != -1) {
+++            int keyOfLine = -1;
+++
+++
+++            strcpy(copyOfLine, lineRead);
+++            strtok(copyOfLine, ",");
+++            keyOfLine = atoi(copyOfLine);
+++
+++            if (keyOfLine == key){
+++                keyFound=1;
+++                printf("%s", lineRead);
+++            }
+++            line++;
+++    }
+++    free(copyOfLine);
+++    fclose(fp1);
+++    // Continue based on key foundness
+++    if (keyFound == 0){
+++        printf("Key not found.");
+++    }
+++}
+++
+++/*
+++Command: Delete
+++
+++Opens the database file and deletes the key's line.
+++
+++I tried doing this a couple different ways, but I ran into so issues.
+++So, I copied this inelegant solution from here: https://www.includehelp.com/c-programs/remove-a-specific-line-from-the-text-file.aspx
+++Copy and filter into a temp file is a solution I could have done myself,
+++its just so bulky. I was sure there was a command for it. Now I'm tired.
+++
+++Obviously I made needed changes and commented the algorithm for my own learning.
+++*/
+++void delete(int key){
+++
+++    FILE* fp1;
+++    FILE* fp2;
+++
+++    char ch;
+++    int line = 0;
+++    int temp = 1;
+++    // Open and check
+++    fp1 = fopen(databaseFile, "r");
+++
+++    if (fp1 == NULL) {
+++        printf("\nUnable to open file\n");
+++        exit(1);
+++    }
+++
+++    // Find line that starts with key
+++    char *lineRead = NULL;
+++    size_t len = 0;
+++    ssize_t bitsRead;
+++    int keyFound = 0;
+++
+++    while ((bitsRead = getline(&lineRead, &len, fp1)) != -1) {
+++
+++
+++            int keyOfLine = -1;
+++
+++            char *keyStringOfLine = malloc(sizeof(char*));
+++            keyStringOfLine = strtok(lineRead, ",");
+++            keyOfLine = atoi(keyStringOfLine);
+++
+++
+++            if (keyOfLine == key){
+++                keyFound=1;
+++                free(keyStringOfLine);
+++                break;
+++            }
+++            line++;
+++            free(keyStringOfLine);
+++    }
+++    rewind(fp1);
+++
+++    // Continue based on key foundness
+++    if (keyFound == 0){
+++        printf("Key not found.");
+++        fclose(fp1);
+++        exit(0);
+++    }
+++
+++    // Copy to temp loop
+++    fp2 = fopen("./temp.txt", "w");
+++
+++    while (!feof(fp1)) {
+++        ch = getc(fp1);
+++
+++        if (ch == '\n'){ temp++; }
+++        if (temp != line) {putc(ch, fp2);}
+++    }
+++    fclose(fp1);
+++    fclose(fp2);
+++
+++    remove(databaseFile);
+diff --git a/initial-kv/my_submission b/initial-kv/my_submission
+new file mode 100644
+index 0000000..e69de29
+diff --git a/initial-kv/tests-out/1.err b/initial-kv/tests-out/1.err
+new file mode 100644
+index 0000000..e69de29
+diff --git a/initial-kv/tests-out/1.out b/initial-kv/tests-out/1.out
+new file mode 100644
+index 0000000..3f67b24
+--- /dev/null
++++ b/initial-kv/tests-out/1.out
+@@ -0,0 +1,2 @@
++For help use command h
++ example: "./kv h"
+diff --git a/initial-kv/tests-out/1.rc b/initial-kv/tests-out/1.rc
+new file mode 100644
+index 0000000..573541a
+--- /dev/null
++++ b/initial-kv/tests-out/1.rc
+@@ -0,0 +1 @@
++0

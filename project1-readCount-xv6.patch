@@ -1,0 +1,176 @@
+diff --git a/Makefile b/Makefile
+index 09d790c..05855ea 100644
+--- a/Makefile
++++ b/Makefile
+@@ -164,7 +164,6 @@ mkfs: mkfs.c fs.h
+ # details:
+ # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
+ .PRECIOUS: %.o
+-
+ UPROGS=\
+ 	_cat\
+ 	_echo\
+@@ -181,6 +180,7 @@ UPROGS=\
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
++	_readCount\
+ 
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+@@ -217,7 +217,7 @@ QEMUGDB = $(shell if $(QEMU) -help | grep -q '^-gdb'; \
+ 	then echo "-gdb tcp::$(GDBPORT)"; \
+ 	else echo "-s -p $(GDBPORT)"; fi)
+ ifndef CPUS
+-CPUS := 2
++CPUS := 1
+ endif
+ QEMUOPTS = -drive file=fs.img,index=1,media=disk,format=raw -drive file=xv6.img,index=0,media=disk,format=raw -smp $(CPUS) -m 512 $(QEMUEXTRA)
+ 
+@@ -249,7 +249,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
+ 
+ EXTRA=\
+ 	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
+-	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
++	ln.c ls.c mkdir.c readCount.c rm.c stressfs.c usertests.c wc.c zombie.c\
+ 	printf.c umalloc.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+ 	.gdbinit.tmpl gdbutil\
+diff --git a/defs.h b/defs.h
+index 82fb982..ed89997 100644
+--- a/defs.h
++++ b/defs.h
+@@ -120,6 +120,8 @@ void            userinit(void);
+ int             wait(void);
+ void            wakeup(void*);
+ void            yield(void);
++int             readCount(void); // MY CHANGE
++
+ 
+ // swtch.S
+ void            swtch(struct context**, struct context*);
+diff --git a/proc.c b/proc.c
+index 806b1b1..12c4364 100644
+--- a/proc.c
++++ b/proc.c
+@@ -15,6 +15,7 @@ struct {
+ static struct proc *initproc;
+ 
+ int nextpid = 1;
++int readCounter = 0; // MY CHANGE
+ extern void forkret(void);
+ extern void trapret(void);
+ 
+@@ -532,3 +533,9 @@ procdump(void)
+     cprintf("\n");
+   }
+ }
++// MY CHANGE
++int readCount()
++{
++  cprintf("Read has been called %d times.\n", readCounter);
++  return 22;
++}
+diff --git a/project1-readCount-xv6.patch b/project1-readCount-xv6.patch
+new file mode 100644
+index 0000000..e69de29
+diff --git a/readCount.c b/readCount.c
+new file mode 100644
+index 0000000..e9a8fee
+--- /dev/null
++++ b/readCount.c
+@@ -0,0 +1,10 @@
++#include "types.h"
++#include "stat.h"
++#include "user.h"
++#include "fcntl.h"
++
++int
++main(int argc, char *argv[]){
++	readCount();
++	exit();
++}
+diff --git a/syscall.c b/syscall.c
+index ee85261..c8842f4 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -103,6 +103,8 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_readCount(void); // MY CHANGE
++extern int readCounter;		// MY CHANGE
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +128,7 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_readCount]   sys_readCount, // MY CHANGE
+ };
+ 
+ void
+@@ -134,7 +137,11 @@ syscall(void)
+   int num;
+   struct proc *curproc = myproc();
+ 
++  // 90% cure this grabs the num in syscall.h
+   num = curproc->tf->eax;
++  // read is number 5
++  if (num == 5){ readCounter++; }
++
+   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+     curproc->tf->eax = syscalls[num]();
+   } else {
+diff --git a/syscall.h b/syscall.h
+index bc5f356..eb5bfcd 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_readCount  22
+diff --git a/sysproc.c b/sysproc.c
+index 0686d29..9d84fbe 100644
+--- a/sysproc.c
++++ b/sysproc.c
+@@ -42,6 +42,16 @@ sys_getpid(void)
+   return myproc()->pid;
+ }
+ 
++
++// I ADDED THIS OH GOD
++int
++sys_readCount(void)
++{
++  return readCount();
++}
++
++
++
+ int
+ sys_sbrk(void)
+ {
+diff --git a/user.h b/user.h
+index 4f99c52..4c8eb09 100644
+--- a/user.h
++++ b/user.h
+@@ -23,6 +23,7 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int readCount(void); // MY CHANGE
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..ccdf8d4 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,4 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(readCount)

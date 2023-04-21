@@ -1,0 +1,167 @@
+diff --git a/threads-sema/barrier.c b/threads-sema/barrier.c
+index f08af98..2b1f675 100644
+--- a/threads-sema/barrier.c
++++ b/threads-sema/barrier.c
+@@ -14,6 +14,9 @@
+ 
+ typedef struct __barrier_t {
+     // add semaphores and other information here
++	sem_t* arrival;
++	int total;
++	int indexCount;
+ } barrier_t;
+ 
+ 
+@@ -22,10 +25,28 @@ barrier_t b;
+ 
+ void barrier_init(barrier_t *b, int num_threads) {
+     // initialization code goes here
++	b->arrival = malloc(sizeof(sem_t) * num_threads);
++	b->total = num_threads;
++	b->indexCount = 0;
++	for (int i=0; i<b->total; i++){
++		sem_init(&b->arrival[i], 0, 0);
++	}	
+ }
+ 
+ void barrier(barrier_t *b) {
+     // barrier code goes here
++
++	int index = b->indexCount;
++	b->indexCount++;
++	
++	for (int i=0; i<b->total; i++){
++		sem_post(&b->arrival[i]);
++	}
++	
++	for (int i=0; i<b->total; i++){
++		sem_wait(&b->arrival[index]);
++	}
++	
+ }
+ 
+ //
+diff --git a/threads-sema/fork-join.c b/threads-sema/fork-join.c
+index b54cbd6..3631235 100644
+--- a/threads-sema/fork-join.c
++++ b/threads-sema/fork-join.c
+@@ -7,16 +7,16 @@ sem_t s;
+ 
+ void *child(void *arg) {
+     printf("child\n");
+-    // use semaphore here
++    sem_post(&s);
+     return NULL;
+ }
+ 
+ int main(int argc, char *argv[]) {
+     pthread_t p;
+     printf("parent: begin\n");
+-    // init semaphore here
++    sem_init(&s, 0, 0);
+     Pthread_create(&p, NULL, child, NULL);
+-    // use semaphore here
++    sem_wait(&s);
+     printf("parent: end\n");
+     return 0;
+ }
+diff --git a/threads-sema/reader-writer.c b/threads-sema/reader-writer.c
+index 8a495bc..b47d9a2 100644
+--- a/threads-sema/reader-writer.c
++++ b/threads-sema/reader-writer.c
+@@ -8,22 +8,48 @@
+ //
+ 
+ typedef struct __rwlock_t {
++	sem_t read;
++	int readCount;
++	sem_t write;
+ } rwlock_t;
+ 
+ 
+ void rwlock_init(rwlock_t *rw) {
++	sem_init(&rw->read, 0, 1);
++	rw->readCount = 0;
++	sem_init(&rw->write, 0, 1);
+ }
+ 
+ void rwlock_acquire_readlock(rwlock_t *rw) {
++
++	sem_wait(&rw->read);
++	rw->readCount++;
++
++	if (rw->readCount==1) {
++		sem_wait(&rw->write);
++	}
++	
++	sem_post(&rw->read);	
+ }
+ 
+ void rwlock_release_readlock(rwlock_t *rw) {
++
++	sem_wait(&rw->read);
++	rw->readCount--;
++
++	if (rw->readCount==0) { 
++	sem_post(&rw->write); 
++	}
++
++	sem_post(&rw->read);
+ }
+ 
+ void rwlock_acquire_writelock(rwlock_t *rw) {
++	sem_wait(&rw->write);
+ }
+ 
+ void rwlock_release_writelock(rwlock_t *rw) {
++	sem_post(&rw->write);
+ }
+ 
+ //
+diff --git a/threads-sema/rendezvous.c b/threads-sema/rendezvous.c
+index 6280516..59d5792 100644
+--- a/threads-sema/rendezvous.c
++++ b/threads-sema/rendezvous.c
+@@ -3,7 +3,8 @@
+ #include <stdlib.h>
+ #include <unistd.h>
+ #include <stdbool.h>
+-
++//#include <semephore.h>
++//#include <pthread.h>
+ #include "common_threads.h"
+ 
+ // If done correctly, each thread should print their "start" message
+@@ -14,6 +15,8 @@
+ 
+ typedef struct __rendezvous_t {
+         // add semaphores and other information here
++	sem_t arrive;
++	sem_t brrive;
+ } rendezvous_t;
+ 
+ 
+@@ -23,16 +26,22 @@ rendezvous_t b;
+ void
+ rendezvous_init(rendezvous_t *b) {
+         // initialization code goes here
++	sem_init(&b->arrive, 0, 0);
++	sem_init(&b->brrive, 0, 0);
+ }
+ 
+ void
+ rendezvous_a(rendezvous_t *b) {
+         // called when thread A reaches the rendezvous
++	sem_post(&b->arrive);
++	sem_wait(&b->brrive);
+ }
+ 
+ void
+ rendezvous_b(rendezvous_t *b) {
+-        // called when thread B reaches the rendezvous
++        // called when thread B reaches the rendezvous	
++	sem_post(&b->brrive);
++	sem_wait(&b->arrive);
+ }
+ 
+ //
